@@ -5,7 +5,6 @@ use thiserror::Error;
 use tracing::error;
 
 use poise::{serenity_prelude::*, CreateReply};
-use uuid::Uuid;
 
 #[derive(Clone)]
 struct Data {
@@ -36,8 +35,9 @@ fn make_uuid_buttons(yes_uuid: &str, no_uuid: &str, disabled: bool) -> CreateAct
 async fn purge_old(ctx: Context<'_>) -> Result<(), SlimeError> {
     let _channel = ctx.guild_channel().await.unwrap();
 
-    let yes_uuid: String = Uuid::new_v4().into();
-    let no_uuid: String = Uuid::new_v4().into();
+    let id = ctx.id();
+    let yes_uuid: String = format!("{id}-yes");
+    let no_uuid: String = format!("{id}-no");
 
     let buttons = make_uuid_buttons(&yes_uuid, &no_uuid, false);
 
