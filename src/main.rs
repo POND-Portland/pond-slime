@@ -69,7 +69,9 @@ async fn purge_old(ctx: Context<'_>) -> Result<(), SlimeError> {
             _ => unreachable!(),
         };
 
-        let followup = CreateInteractionResponseFollowup::new().content(content);
+        let followup = CreateInteractionResponseFollowup::new()
+            .content(content)
+            .ephemeral(true);
         interactions
             .create_followup(ctx, followup)
             .await
