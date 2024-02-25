@@ -4,11 +4,12 @@ use shuttle_secrets::SecretStore;
 use thiserror::Error;
 use tracing::error;
 
-use poise::serenity_prelude::*;
+use poise::{serenity_prelude::*, CreateReply};
+use uuid::Uuid;
 
 #[derive(Clone)]
 struct Data {
-    pool: sqlx::PgPool,
+    _pool: sqlx::PgPool,
 }
 
 #[derive(Error, Debug)]
@@ -18,9 +19,63 @@ enum SlimeError {
 }
 type Context<'a> = poise::Context<'a, Data, SlimeError>;
 
+fn make_uuid_buttons(yes_uuid: &str, no_uuid: &str, disabled: bool) -> CreateActionRow {
+    CreateActionRow::Buttons(vec![
+        CreateButton::new(yes_uuid)
+            .label("yes")
+            .style(ButtonStyle::Danger)
+            .disabled(disabled),
+        CreateButton::new(no_uuid)
+            .label("no")
+            .style(ButtonStyle::Secondary)
+            .disabled(disabled),
+    ])
+}
+
 #[poise::command(slash_command)]
-async fn hello(ctx: Context<'_>) -> Result<(), SlimeError> {
-    ctx.say("world!").await?;
+async fn purge_old(ctx: Context<'_>) -> Result<(), SlimeError> {
+    let _channel = ctx.guild_channel().await.unwrap();
+
+    let yes_uuid: String = Uuid::new_v4().into();
+    let no_uuid: String = Uuid::new_v4().into();
+
+    let buttons = make_uuid_buttons(&yes_uuid, &no_uuid, false);
+
+    let reply = CreateReply::default()
+        .content("The first message to be deleted is <foo>, the last is <bar> continue?")
+        .components(vec![buttons])
+        .ephemeral(true);
+
+    ctx.send(reply).await?;
+
+    if let Some(interactions) = ComponentInteractionCollector::new(ctx.serenity_context())
+        .timeout(std::time::Duration::from_secs(120))
+        .custom_ids(vec![yes_uuid.clone(), no_uuid.clone()])
+        .await
+    {
+        let message = CreateInteractionResponseMessage::new()
+            .components(vec![make_uuid_buttons("yes_disabled", "no_disabled", true)])
+            .content(&interactions.message.content);
+
+        let disable_buttons = CreateInteractionResponse::UpdateMessage(message);
+        interactions
+            .create_response(ctx, disable_buttons)
+            .await
+            .inspect_err(|e| error!("{}", e))?;
+
+        let content = match &interactions.data.custom_id {
+            id if id == &yes_uuid => "yes",
+            id if id == &no_uuid => "no",
+            _ => unreachable!(),
+        };
+
+        let followup = CreateInteractionResponseFollowup::new().content(content);
+        interactions
+            .create_followup(ctx, followup)
+            .await
+            .inspect_err(|e| error!("{}", e))?;
+    }
+
     Ok(())
 }
 
@@ -44,13 +99,13 @@ async fn serenity(
 
     let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
-            commands: vec![hello()],
+            commands: vec![purge_old()],
             ..Default::default()
         })
         .setup(|ctx, _ready, framework| {
             Box::pin(async move {
                 poise::builtins::register_globally(ctx, &framework.options().commands).await?;
-                Ok(Data { pool })
+                Ok(Data { _pool: pool })
             })
         })
         .build();
