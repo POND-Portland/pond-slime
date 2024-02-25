@@ -14,16 +14,6 @@ jobs:
     environment: deployment
 
     steps:
-    - uses: actions/checkout@v3
-
-    - name: Install Binstall
-      run: curl -L --proto '=https' --tlsv1.2 -sSf https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash
-
-    - name: Install Shuttle
-      run: cargo binstall cargo-shuttle -y
-
-    - name: Login
-      run: cargo shuttle login --api-key ${{secrets.SHUTTLE_API_KEY}}
-
-    - name: Deploy
-      run: cargo shuttle deploy
+    - uses: shuttle-hq/deploy-action@main
+      with:
+        deploy-key: ${{ secrets.SHUTTLE_API_KEY }}
