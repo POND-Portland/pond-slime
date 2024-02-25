@@ -6,7 +6,10 @@ use tracing::error;
 
 use poise::serenity_prelude::*;
 
-struct Data;
+#[derive(Clone)]
+struct Data {
+    pool: sqlx::PgPool,
+}
 
 #[derive(Error, Debug)]
 enum SlimeError {
@@ -24,6 +27,7 @@ async fn hello(ctx: Context<'_>) -> Result<(), SlimeError> {
 #[shuttle_runtime::main]
 async fn serenity(
     #[shuttle_secrets::Secrets] secret_store: SecretStore,
+    #[shuttle_shared_db::Postgres] pool: sqlx::PgPool,
 ) -> shuttle_serenity::ShuttleSerenity {
     // Get the discord token set in `Secrets.toml`
     let token = if let Some(token) = secret_store.get("DISCORD_TOKEN") {
@@ -46,7 +50,7 @@ async fn serenity(
         .setup(|ctx, _ready, framework| {
             Box::pin(async move {
                 poise::builtins::register_globally(ctx, &framework.options().commands).await?;
-                Ok(Data)
+                Ok(Data { pool })
             })
         })
         .build();
