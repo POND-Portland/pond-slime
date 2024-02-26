@@ -293,6 +293,22 @@ async fn admin_bot_spam_channel(
     Ok(())
 }
 
+#[poise::command(slash_command)]
+async fn help(
+    ctx: Context<'_>,
+    #[description = "Specific command to show help about"] command: Option<String>,
+) -> Result<(), SlimeError> {
+    let config = poise::builtins::HelpConfiguration {
+        extra_text_at_bottom: "\
+Type /help command for more info on a command.
+You can edit your message to the bot and the bot will edit its response.",
+        ..Default::default()
+    };
+
+    poise::builtins::help(ctx, command.as_deref(), config).await?;
+    Ok(())
+}
+
 #[shuttle_runtime::main]
 async fn serenity(
     #[shuttle_secrets::Secrets] secret_store: SecretStore,
@@ -316,7 +332,7 @@ async fn serenity(
 
     let framework = poise::Framework::builder()
         .options(poise::FrameworkOptions {
-            commands: vec![purge_old(), admin_bot_spam_channel()],
+            commands: vec![purge_old(), admin_bot_spam_channel(), help()],
             ..Default::default()
         })
         .setup(|ctx, _ready, framework| {
