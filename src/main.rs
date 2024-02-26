@@ -255,12 +255,17 @@ async fn purge_old(
 )]
 async fn admin_bot_spam_channel(
     ctx: Context<'_>,
-    #[description = "the channel to purge from"] channel: Option<Channel>,
+    #[description = "the channel to purge from"] channel: Option<GuildChannel>,
 ) -> Result<(), SlimeError> {
     use diesel;
     use schema::{admin_bot_spam_channel::dsl as admin_bot_spam_channel, guilds::dsl as guilds};
 
-    let channel = channel.map(|v| v.id()).unwrap_or(ctx.channel_id());
+    let channel = if let Some(channel) = channel {
+        channel
+    } else {
+        ctx.guild_channel().await.unwrap()
+    };
+    let channel_id = channel.id;
     let guild_id = ctx.guild_id().unwrap().get();
 
     let mut conn = ctx.data().pool.get().await?;
@@ -273,7 +278,7 @@ async fn admin_bot_spam_channel(
 
     diesel::insert_into(admin_bot_spam_channel::admin_bot_spam_channel)
         .values((
-            admin_bot_spam_channel::channel_id.eq(channel.get() as i64),
+            admin_bot_spam_channel::channel_id.eq(channel_id.get() as i64),
             admin_bot_spam_channel::guild_id.eq(guild_id as i64),
         ))
         .on_conflict(admin_bot_spam_channel::guild_id)
@@ -284,11 +289,18 @@ async fn admin_bot_spam_channel(
         .execute(&mut conn)
         .await?;
 
-    ctx.say(format!(
-        "Bot spam channel successfully set to {}",
-        channel.name(ctx).await?
-    ))
-    .await?;
+    ctx.say(format!("Bot spam channel successfully set to {}", channel,))
+        .await?;
+
+    channel
+        .send_message(
+            ctx,
+            CreateMessage::new().content(format!(
+                "This channel is now my bot spam channel, as per {}'s orders!",
+                ctx.author()
+            )),
+        )
+        .await?;
 
     Ok(())
 }
