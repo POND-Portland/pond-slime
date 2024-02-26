@@ -12,7 +12,15 @@ use thiserror::Error;
 use tokio::time::Instant;
 use tracing::error;
 
-use diesel_async::{pooled_connection::deadpool::Pool, AsyncPgConnection, Error};
+mod schema;
+
+use diesel_async::{
+    pooled_connection::{
+        deadpool::{Pool, PoolError},
+        AsyncDieselConnectionManager,
+    },
+    AsyncPgConnection,
+};
 
 const METER_LIMIT: usize = 500;
 
@@ -26,7 +34,7 @@ enum SlimeError {
     #[error("an error occurred within Serenity: {0}")]
     SerenityError(#[from] SerenityError),
     #[error("an error occurred within sqlx: {0}")]
-    DatabaseError(#[from] SqlxError),
+    DatabasePoolError(#[from] PoolError),
 }
 type Context<'a> = poise::Context<'a, Data, SlimeError>;
 
@@ -128,8 +136,6 @@ async fn purge_old(
 ) -> Result<(), SlimeError> {
     let before = Utc::now() - chrono::Duration::days(7);
     let dry_run = dry_run.unwrap_or(false) || cfg!(debug);
-
-    let conn = ctx.data().pool.acquire().await?;
 
     ctx.defer().await?;
 
@@ -241,23 +247,13 @@ async fn admin_bot_spam_channel(
 ) -> Result<(), SlimeError> {
     let channel = channel.map(|v| v.id()).unwrap_or(ctx.channel_id());
 
-    let mut conn = ctx.data().pool.acquire().await?;
-
-    sqlx::query!(
-        "INSERT INTO bot_spam_channels (guild_id, channel_id) VALUES ({}, {});",
-        ctx.guild_id().unwrap().to_string(),
-        channel.to_string()
-    )
-    .execute(&mut *conn)
-    .await?;
-
     todo!()
 }
 
 #[shuttle_runtime::main]
 async fn serenity(
     #[shuttle_secrets::Secrets] secret_store: SecretStore,
-    #[shuttle_diesel_async::Postgres] pool: Pool<AsyncPgConnection>,
+    #[shuttle_shared_db::Postgres] db_uri: String,
 ) -> shuttle_serenity::ShuttleSerenity {
     // Get the discord token set in `Secrets.toml`
     let token = if let Some(token) = secret_store.get("DISCORD_TOKEN") {
@@ -265,6 +261,9 @@ async fn serenity(
     } else {
         return Err(anyhow!("'DISCORD_TOKEN' was not found").into());
     };
+
+    let config = AsyncDieselConnectionManager::new(db_uri);
+    let pool = Pool::builder(config).build().unwrap();
 
     // Set gateway intents, which decides what events the bot will be notified about
     let intents = GatewayIntents::GUILD_MESSAGES

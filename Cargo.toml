@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.66"
 chrono = "0.4.34"
+diesel = "2.1.4"
 diesel-async = { version = "0.4.1", features = [
     "postgres",
     "tokio",
@@ -22,6 +23,7 @@ shuttle-diesel-async = { git = "https://github.com/aumetra/shuttle-diesel-async"
 shuttle-runtime = "0.39.0"
 shuttle-secrets = "0.39.0"
 shuttle-serenity = "0.39.0"
+shuttle-shared-db = { version = "0.39.0", features = ["postgres"] }
 thiserror = "1.0.57"
 tokio = "1.26.0"
 tracing = "0.1.37"
