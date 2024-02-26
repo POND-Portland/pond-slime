@@ -33,23 +33,10 @@ struct Data {
 }
 
 #[derive(Queryable, Selectable, Insertable, Copy, Clone, Debug, PartialEq, Eq, Hash)]
-#[diesel(table_name = schema::guilds)]
-struct Guild {
+#[diesel(table_name = schema::admin_bot_spam_channel)]
+struct AdminBotSpamChannel {
     guild_id: i64,
-}
-
-impl From<GuildId> for Guild {
-    fn from(value: GuildId) -> Self {
-        Self {
-            guild_id: value.get() as i64,
-        }
-    }
-}
-
-impl From<Guild> for GuildId {
-    fn from(value: Guild) -> Self {
-        GuildId::from(value.guild_id as u64)
-    }
+    channel_id: i64,
 }
 
 #[derive(Error, Debug)]
@@ -272,35 +259,26 @@ async fn admin_bot_spam_channel(
     #[description = "the channel to purge from"] channel: Option<GuildChannel>,
 ) -> Result<(), SlimeError> {
     use diesel;
-    use schema::{admin_bot_spam_channel, guilds};
+    use schema::admin_bot_spam_channel::dsl::*;
 
     let channel = if let Some(channel) = channel {
         channel
     } else {
         ctx.guild_channel().await.unwrap()
     };
-    let channel_id = channel.id;
 
     let mut conn = ctx.data().pool.get().await?;
 
-    let guild: Guild = ctx.guild_id().unwrap().into();
+    let row = AdminBotSpamChannel {
+        guild_id: ctx.guild_id().unwrap().get() as i64,
+        channel_id: channel.id.get() as i64,
+    };
 
-    diesel::insert_into(guilds::table)
-        .values(guild)
-        .on_conflict_do_nothing()
-        .execute(&mut conn)
-        .await?;
-
-    diesel::insert_into(admin_bot_spam_channel::table)
-        .values((
-            admin_bot_spam_channel::channel_id.eq(channel_id.get() as i64),
-            admin_bot_spam_channel::guild_id.eq(guild.guild_id),
-        ))
-        .on_conflict(admin_bot_spam_channel::guild_id)
+    diesel::insert_into(admin_bot_spam_channel)
+        .values(row)
+        .on_conflict(guild_id)
         .do_update()
-        .set(
-            admin_bot_spam_channel::guild_id.eq(upsert::excluded(admin_bot_spam_channel::guild_id)),
-        )
+        .set(channel_id.eq(upsert::excluded(channel_id)))
         .execute(&mut conn)
         .await?;
 
