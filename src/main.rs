@@ -256,7 +256,9 @@ async fn purge_old(
 )]
 async fn admin_bot_spam_channel(
     ctx: Context<'_>,
-    #[description = "the channel to purge from"] channel: Option<GuildChannel>,
+    #[description = "the channel to send admin command status updates to"] channel: Option<
+        GuildChannel,
+    >,
 ) -> Result<(), SlimeError> {
     use diesel;
     use schema::admin_bot_spam_channel::dsl::*;
