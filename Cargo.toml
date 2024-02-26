@@ -12,6 +12,7 @@ diesel-async = { version = "0.4.1", features = [
     "tokio",
     "deadpool",
 ] }
+diesel_async_migrations = "0.12.0"
 poise = "0.6.1"
 serenity = { version = "0.12.0", default-features = false, features = [
     "client",

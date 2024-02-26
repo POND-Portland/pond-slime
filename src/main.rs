@@ -2,9 +2,7 @@ use std::fmt::Write;
 
 use anyhow::anyhow;
 use chrono::{DateTime, Duration, Utc};
-use diesel::{
-    prelude::*, query_builder::ReplaceStatement, result::Error as DieselError, upsert, Queryable,
-};
+use diesel::{prelude::*, result::Error as DieselError, upsert, Queryable};
 use diesel_async::{
     pooled_connection::{
         deadpool::{Pool, PoolError},
@@ -12,6 +10,7 @@ use diesel_async::{
     },
     AsyncPgConnection, RunQueryDsl,
 };
+use diesel_async_migrations::EmbeddedMigrations;
 use poise::{serenity_prelude::*, CreateReply};
 use serenity::{
     futures::{future, StreamExt, TryStreamExt},
@@ -25,6 +24,8 @@ use tracing::error;
 mod schema;
 
 const METER_LIMIT: usize = 500;
+
+static MIGRATIONS: EmbeddedMigrations = diesel_async_migrations::embed_migrations!();
 
 #[derive(Clone)]
 struct Data {
@@ -333,8 +334,14 @@ async fn serenity(
         return Err(anyhow!("'DISCORD_TOKEN' was not found").into());
     };
 
-    let config = AsyncDieselConnectionManager::new(db_uri);
+    let config = AsyncDieselConnectionManager::<AsyncPgConnection>::new(db_uri);
     let pool = Pool::builder(config).build().unwrap();
+
+    let mut conn = pool.get().await.expect("could not connect to shared DB");
+    MIGRATIONS
+        .run_pending_migrations(&mut conn)
+        .await
+        .expect("could not run migrations");
 
     // Set gateway intents, which decides what events the bot will be notified about
     let intents = GatewayIntents::GUILD_MESSAGES

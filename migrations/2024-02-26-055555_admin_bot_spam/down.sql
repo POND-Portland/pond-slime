@@ -1,3 +1,3 @@
 -- This file should undo anything in `up.sql`
 
-DROP TABLE admit_bot_spam_channel;
+DROP TABLE admin_bot_spam_channel;
