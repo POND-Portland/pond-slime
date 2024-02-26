@@ -251,7 +251,7 @@ async fn purge_old(
     slash_command,
     category = "admin",
     guild_only = true,
-    // default_member_permissions = "ADMINISTRATOR",
+    default_member_permissions = "ADMINISTRATOR",
     ephemeral = true
 )]
 async fn admin_bot_spam_channel(
