@@ -2,6 +2,16 @@ use std::fmt::Write;
 
 use anyhow::anyhow;
 use chrono::{DateTime, Duration, Utc};
+use diesel::{
+    prelude::*, query_builder::ReplaceStatement, result::Error as DieselError, upsert, Queryable,
+};
+use diesel_async::{
+    pooled_connection::{
+        deadpool::{Pool, PoolError},
+        AsyncDieselConnectionManager,
+    },
+    AsyncPgConnection, RunQueryDsl,
+};
 use poise::{serenity_prelude::*, CreateReply};
 use serenity::{
     futures::{future, StreamExt, TryStreamExt},
@@ -14,14 +24,6 @@ use tracing::error;
 
 mod schema;
 
-use diesel_async::{
-    pooled_connection::{
-        deadpool::{Pool, PoolError},
-        AsyncDieselConnectionManager,
-    },
-    AsyncPgConnection,
-};
-
 const METER_LIMIT: usize = 500;
 
 #[derive(Clone)]
@@ -29,12 +31,21 @@ struct Data {
     pool: Pool<AsyncPgConnection>,
 }
 
+#[derive(Queryable, Selectable, Insertable)]
+#[diesel(table_name = schema::guilds)]
+struct Guild {
+    id: i32,
+    guild_id: i64,
+}
+
 #[derive(Error, Debug)]
 enum SlimeError {
     #[error("an error occurred within Serenity: {0}")]
-    SerenityError(#[from] SerenityError),
+    Serenity(#[from] SerenityError),
     #[error("an error occurred within sqlx: {0}")]
-    DatabasePoolError(#[from] PoolError),
+    DatabasePool(#[from] PoolError),
+    #[error("an error occurred from a diesel query: {0}")]
+    Diesel(#[from] DieselError),
 }
 type Context<'a> = poise::Context<'a, Data, SlimeError>;
 
@@ -237,17 +248,49 @@ async fn purge_old(
 /// Sets the channel where bot spam (e.g. status updates) should happen. Default: current channel
 #[poise::command(
     slash_command,
-    category = "delete",
+    category = "admin",
     guild_only = true,
-    default_member_permissions = "ADMINISTRATOR"
+    // default_member_permissions = "ADMINISTRATOR",
+    ephemeral = true
 )]
 async fn admin_bot_spam_channel(
     ctx: Context<'_>,
     #[description = "the channel to purge from"] channel: Option<Channel>,
 ) -> Result<(), SlimeError> {
-    let channel = channel.map(|v| v.id()).unwrap_or(ctx.channel_id());
+    use diesel;
+    use schema::{admin_bot_spam_channel::dsl as admin_bot_spam_channel, guilds::dsl as guilds};
 
-    todo!()
+    let channel = channel.map(|v| v.id()).unwrap_or(ctx.channel_id());
+    let guild_id = ctx.guild_id().unwrap().get();
+
+    let mut conn = ctx.data().pool.get().await?;
+
+    diesel::insert_into(guilds::guilds)
+        .values(guilds::guild_id.eq(guild_id as i64))
+        .on_conflict_do_nothing()
+        .execute(&mut conn)
+        .await?;
+
+    diesel::insert_into(admin_bot_spam_channel::admin_bot_spam_channel)
+        .values((
+            admin_bot_spam_channel::channel_id.eq(channel.get() as i64),
+            admin_bot_spam_channel::guild_id.eq(guild_id as i64),
+        ))
+        .on_conflict(admin_bot_spam_channel::guild_id)
+        .do_update()
+        .set(
+            admin_bot_spam_channel::guild_id.eq(upsert::excluded(admin_bot_spam_channel::guild_id)),
+        )
+        .execute(&mut conn)
+        .await?;
+
+    ctx.say(format!(
+        "Bot spam channel successfully set to {}",
+        channel.name(ctx).await?
+    ))
+    .await?;
+
+    Ok(())
 }
 
 #[shuttle_runtime::main]
