@@ -32,11 +32,24 @@ struct Data {
     pool: Pool<AsyncPgConnection>,
 }
 
-#[derive(Queryable, Selectable, Insertable)]
+#[derive(Queryable, Selectable, Insertable, Copy, Clone, Debug, PartialEq, Eq, Hash)]
 #[diesel(table_name = schema::guilds)]
 struct Guild {
-    id: i32,
     guild_id: i64,
+}
+
+impl From<GuildId> for Guild {
+    fn from(value: GuildId) -> Self {
+        Self {
+            guild_id: value.get() as i64,
+        }
+    }
+}
+
+impl From<Guild> for GuildId {
+    fn from(value: Guild) -> Self {
+        GuildId::from(value.guild_id as u64)
+    }
 }
 
 #[derive(Error, Debug)]
@@ -259,7 +272,7 @@ async fn admin_bot_spam_channel(
     #[description = "the channel to purge from"] channel: Option<GuildChannel>,
 ) -> Result<(), SlimeError> {
     use diesel;
-    use schema::{admin_bot_spam_channel::dsl as admin_bot_spam_channel, guilds::dsl as guilds};
+    use schema::{admin_bot_spam_channel, guilds};
 
     let channel = if let Some(channel) = channel {
         channel
@@ -267,20 +280,21 @@ async fn admin_bot_spam_channel(
         ctx.guild_channel().await.unwrap()
     };
     let channel_id = channel.id;
-    let guild_id = ctx.guild_id().unwrap().get();
 
     let mut conn = ctx.data().pool.get().await?;
 
-    diesel::insert_into(guilds::guilds)
-        .values(guilds::guild_id.eq(guild_id as i64))
+    let guild: Guild = ctx.guild_id().unwrap().into();
+
+    diesel::insert_into(guilds::table)
+        .values(guild)
         .on_conflict_do_nothing()
         .execute(&mut conn)
         .await?;
 
-    diesel::insert_into(admin_bot_spam_channel::admin_bot_spam_channel)
+    diesel::insert_into(admin_bot_spam_channel::table)
         .values((
             admin_bot_spam_channel::channel_id.eq(channel_id.get() as i64),
-            admin_bot_spam_channel::guild_id.eq(guild_id as i64),
+            admin_bot_spam_channel::guild_id.eq(guild.guild_id),
         ))
         .on_conflict(admin_bot_spam_channel::guild_id)
         .do_update()
