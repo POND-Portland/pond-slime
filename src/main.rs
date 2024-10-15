@@ -83,7 +83,7 @@ async fn messages_before(
 
 async fn bulk_delete(
     ctx: Context<'_>,
-    messages: &[Message],
+    messages: &[&Message],
     dry_run: bool,
 ) -> Result<(), SlimeError> {
     debug_assert!(
@@ -111,7 +111,7 @@ async fn bulk_delete(
 
 async fn slow_bulk_delete(
     ctx: Context<'_>,
-    messages: &[Message],
+    messages: &[&Message],
     dry_run: bool,
 ) -> Result<(), SlimeError> {
     let mut count = 0;
@@ -119,7 +119,7 @@ async fn slow_bulk_delete(
 
     for message in messages {
         if !dry_run {
-            ctx.channel_id().delete_message(ctx, message).await?;
+            ctx.channel_id().delete_message(ctx, message.id).await?;
         }
         count += 1;
 
@@ -147,7 +147,7 @@ async fn purge_old(
     dry_run: Option<bool>,
 ) -> Result<(), SlimeError> {
     let before = Utc::now() - chrono::Duration::days(7);
-    let dry_run = dry_run.unwrap_or(false) || cfg!(debug);
+    let dry_run = dry_run.unwrap_or(false) || cfg!(debug_assertions);
 
     ctx.defer().await?;
 
@@ -229,10 +229,24 @@ async fn purge_old(
             .inspect_err(|e| error!("{}", e))?;
 
         let content = match &interactions.data.custom_id {
-            id if id == &yes_uuid => "yes",
-            id if id == &no_uuid => "no",
+            id if id == &yes_uuid => "Messages deleted successfully",
+            id if id == &no_uuid => "Aborted",
             _ => unreachable!(),
         };
+
+        if !dry_run {
+            let fast_delete: Vec<_> = messages
+                .iter()
+                .filter(|&msg| msg.timestamp.to_utc() >= bulk_cutoff)
+                .collect();
+            bulk_delete(ctx, &fast_delete, false).await?;
+
+            let slow_delete: Vec<_> = messages
+                .iter()
+                .filter(|&msg| msg.timestamp.to_utc() < bulk_cutoff)
+                .collect();
+            slow_bulk_delete(ctx, &slow_delete, false).await?;
+        }
 
         let followup = CreateInteractionResponseFollowup::new()
             .content(content)
